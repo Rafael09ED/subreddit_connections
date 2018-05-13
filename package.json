@@ -1,0 +1,17 @@
+{
+  "name": "subreddit_connections",
+  "version": "0.0.1",
+  "main": "app.js",
+  "dependencies": {
+    "neo4j-driver": "^1.6.1",
+    "npm-update": "^1.0.7",
+    "p-queue": "^2.4.2",
+    "p-throttle": "^1.1.0",
+    "process": "^0.11.10",
+    "snoowrap": "^1.15.2"
+  },
+  "scripts": {
+    "run": "node app.js",
+    "run test": "node gists/testing.js"
+  }
+}
