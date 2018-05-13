@@ -13,10 +13,10 @@ const PQueue = require("p-queue");
 //const PThrottleQueue = require('./throttledPQueue');
 const cc = require("./ConsoleColors");
 
+
 // -- Constants --
 const redditAPILimitPerRequest = 100;
-const redditAPIRequestPerInterval = 60;
-const redditAPIRequestIntervalTime_ms = 120 * 1000 + 1;
+
 
 // -- Setup --
 const neo4jDriver = neo4j.driver("bolt://localhost", neo4j.auth.basic("neo4j", "1234"));
@@ -75,7 +75,7 @@ const addSubredditToNeo4j = (subredditName, subredditIsNSFW, subredditSubscriber
     };
     return neo4jSession
         .run(addSubreddit_cypher, addSubreddit_params)
-        .then(console.log)
+        .then((value) => logReturned(value, "Added Subreddit: " + subredditName))
         .catch(reason =>
             catch_Neo4jError(reason, "Subreddit: " + subredditName, addSubreddit_cypher, addSubreddit_params));
 };
@@ -120,7 +120,6 @@ const processModeratorsFromSubreddit = (subredditName) => {
         .then(value => {
             for (let i = 0; i < value.length; i++) {
                 let modName = value[i]['name'];
-                console.log(modName);
                 neo4jQueue.add(() => addRedditUserToNeo4j(modName));
                 neo4jQueue.add(() => linkModToSubredditInNeo4j(modName, subredditName));
             }
@@ -144,7 +143,7 @@ const processMostPopularSubreddits = (subredditsToGet, lastSubredditIdName, coun
             for (let i = 0; i < value.length; i++) {
                 const subredditQuery = value[i];
                 let subredditName = subredditQuery['display_name'];
-                console.log(subredditName);
+                //console.log(subredditName);
                 let subredditIsNSFW = subredditQuery['over18'] === true;
                 let subredditSubscriberCount = parseInt(subredditQuery['subscribers']);
                 neo4jQueue.add(() => addSubredditToNeo4j(subredditName, subredditIsNSFW, subredditSubscriberCount));
@@ -166,17 +165,18 @@ const processMostPopularSubreddits = (subredditsToGet, lastSubredditIdName, coun
 
 };
 
+
 // -- Parameters --
-const numberOfSubredditsToAdd = 2000;
+const numberOfSubredditsToAdd = 1000000;
+
 
 // -- Code Start --
-
 redditQueue.add(() => processMostPopularSubreddits(numberOfSubredditsToAdd));
 redditQueue.start();
+neo4jQueue.start();
 redditQueue.onIdle().then(() => {
     console.log("All Reddit queries done");
-    console.log(neo4jQueue.size + " neo4j queries to do");
-    neo4jQueue.start();
+    console.log(neo4jQueue.size + " neo4j queries to go");
     neo4jQueue.onIdle().then(() => {
         console.log("all done");
         neo4jSession.close(() => {

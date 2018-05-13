@@ -53,120 +53,124 @@ class PriorityQueue {
     }
 }
 
-class PQueue {
+class ThrottledPQueue {
     constructor(opts) {
         opts = Object.assign({
-            concurrency: Infinity,
-            maxInInterval: Infinity,
-            interval: Infinity,
+            runningConcurrency: false,       // max is for concurrent running vs concurrent started in interval
+            concurrentMax: Infinity,
+            intervalTime: 0,         // the interval time is ms
             autoStart: true,
             queueClass: PriorityQueue
         }, opts);
 
-        if (!(typeof opts.concurrency === 'number' && opts.concurrency >= 1)) {
-            throw new TypeError(`Expected \`concurrency\` to be a number from 1 and up, got \`${opts.concurrency}\` (${typeof opts.concurrency})`);
+        if (!(typeof opts.concurrentMax === 'number' && opts.concurrentMax >= 1)) {
+            throw new TypeError(`Expected \`concurrentMax\` to be a number from 1 and up, got \`${opts.concurrentMax}\` (${typeof opts.concurrentMax})`);
         }
-        if (!Number.isFinite(opts.maxInInterval)) {
-            throw new TypeError('Expected `maxInInterval` to be a finite number');
-        }
-        if (!Number.isFinite(opts.interval)) {
-            throw new TypeError('Expected `interval` to be a finite number');
+        if (!(typeof opts.intervalTime === 'number' && Number.isFinite(opts.intervalTime) && opts.intervalTime >= 0)) {
+            throw new TypeError(`Expected \`intervalTime\` to be a finite number >= 0, got \`${opts.intervalTime}\` (${typeof opts.intervalTime})`);
         }
 
-        this.queue = new opts.queueClass(); // eslint-disable-line new-cap
-        this._queueClass = opts.queueClass;
-        this._pendingCount = 0; // number actively being ran
-        this._concurrency = opts.concurrency;
-
+        this._concurrentCountIsNewIntervalCount = opts.runningConcurrency;
         this._isPaused = opts.autoStart === false;
-        this._resolveEmpty = () => {
-        };
-        this._resolveIdle = () => {
-        };
 
-        //throttle section:
-        this._doneInInterval = 0;
-        this._intervalTime = opts.interval;
-        this._maxInInterval = opts.maxInInterval;
+        this.queue = new opts.queueClass();
+        this._queueClass = opts.queueClass;
+
+        this._concurrentCount = 0;
+        this._concurrentMax = opts.concurrentMax;
+
+        this._isIntervalIgnored = this._concurrentMax === Infinity || this._intervalTime === 0;
+        this._intervalCount = 0;
+        this._intervalTime = opts.intervalTime;
         this._intervalId = null;
+
+        this._resolveEmpty = () => {};
+        this._resolveIdle = () => {};
     }
 
-    _next() {
-        this._pendingCount--;
-        if (!this._canStartAnotherBecauseInterval()) return;
-        this._startAnother();
+    get _doesIntervalAllowAnother() {
+        return this._isIntervalIgnored || this._intervalCount < this._concurrentMax;
     }
 
-    _startAnother() {
-        if (this.queue.size > 0) {
-            if (!this._isPaused) {
-                this.queue.dequeue()();
-            }
-        } else {
-            this._resolveEmpty();
-            this._resolveEmpty = () => {
-            };
+    get _areAnyQueued() {
+        return this.queue.size > 0;
+    }
 
-            if (this._pendingCount === 0) {
-                this._resolveIdle();
-                this._resolveIdle = () => {
-                };
-            }
+    get _doesConcurrentAllowAnother() {
+        return this._concurrentCount < this._concurrentMax;
+    }
+
+    _onIndividualCompletion() {
+        this._concurrentCount--;
+        this._tryToStartAnother();
+    }
+
+    _tryToStartAnother() {
+        if (!this._areAnyQueued) {
+            this._resolvePromises();
+            return false;
+        }
+        if (!this._isPaused && this._doesIntervalAllowAnother && this._doesConcurrentAllowAnother) {
+            this.queue.dequeue()();
+            this._initializeIntervalIfNeeded();
+            return true;
+        }
+        return false;
+    }
+
+    _initializeIntervalIfNeeded() {
+        if (this._isIntervalIgnored || this._intervalId !== null)
+            return;
+        this._intervalId = setInterval(() => this._onInterval(), this._intervalTime)
+    }
+
+    _resolvePromises() {
+        this._resolveEmpty();
+        this._resolveEmpty = () => {};
+
+        if (this._concurrentCount === 0) {
+            this._resolveIdle();
+            this._resolveIdle = () => {};
         }
     }
 
     _onInterval() {
-        console.log(this._doneInInterval + "  ==================================================  " + this._pendingCount);
-        if (0 === this._doneInInterval && 0 === this._pendingCount) {
+        if (0 === this._intervalCount && 0 === this._concurrentCount) {
             clearInterval(this._intervalId);
             this._intervalId = null;
         }
-        this._doneInInterval = 0;
-        while (this._pendingCount < this._concurrency && this._canStartAnotherBecauseInterval())
-            this._startAnother();
+        this._intervalCount = (this._concurrentCountIsNewIntervalCount) ? this._concurrentCount : 0;
+        while (this._tryToStartAnother()) {}
     }
-
 
     add(fn, opts) {
         return new Promise((resolve, reject) => {
             const run = () => {
-                this._pendingCount++;
-                this._doneInInterval++;
-                if (this._intervalId === null) {
-                    this._intervalId = setInterval(() => this._onInterval(), this._intervalTime)
-                }
-
+                this._concurrentCount++;
+                this._intervalCount++;
+                if (this._intervalId === null)
+                    this._intervalId = setInterval(() => this._onInterval(), this._intervalTime);
 
                 try {
                     Promise.resolve(fn()).then(
                         val => {
                             resolve(val);
-                            this._next();
+                            this._onIndividualCompletion();
                         },
                         err => {
                             reject(err);
-                            this._next();
+                            this._onIndividualCompletion();
                         }
                     );
                 } catch (err) {
                     reject(err);
-                    this._next();
+                    this._onIndividualCompletion();
                 }
             };
+            this.queue.enqueue(run, opts);
+            this._tryToStartAnother();
 
-            if (!this._isPaused && this._pendingCount < this._concurrency && this._canStartAnotherBecauseInterval) {
-                run();
-            } else {
-                this.queue.enqueue(run, opts);
-                if (this._intervalId === null) {
-                    this._intervalId = setInterval(() => this._onInterval(), this._intervalTime)
-                }
-            }
         });
-    }
-
-    _canStartAnotherBecauseInterval() {
-        return this._doneInInterval < this._maxInInterval;
     }
 
     addAll(fns, opts) {
@@ -174,14 +178,9 @@ class PQueue {
     }
 
     start() {
-        if (!this._isPaused) {
-            return;
-        }
-
+        if (!this._isPaused) return;
         this._isPaused = false;
-        while (this.queue.size > 0 && this._pendingCount < this._concurrency && this._canStartAnotherBecauseInterval) {
-            this.queue.dequeue()();
-        }
+        while (this._tryToStartAnother()) {}
     }
 
     pause() {
@@ -189,7 +188,7 @@ class PQueue {
     }
 
     clear() {
-        this.queue = new this._queueClass(); // eslint-disable-line new-cap
+        this.queue = new this._queueClass();
     }
 
     onEmpty() {
@@ -209,7 +208,7 @@ class PQueue {
 
     onIdle() {
         // Instantly resolve if none pending & if nothing else is queued
-        if (this._pendingCount === 0 && this.queue.size === 0) {
+        if (this._concurrentCount === 0 && this.queue.size === 0) {
             return Promise.resolve();
         }
 
@@ -227,12 +226,17 @@ class PQueue {
     }
 
     get pending() {
-        return this._pendingCount;
+        return this._concurrentCount;
     }
 
     get isPaused() {
         return this._isPaused;
     }
+
+    close() {
+        clearInterval(this._intervalId);
+        this._intervalId = null;
+    }
 }
 
-module.exports = PQueue;
+module.exports = ThrottledPQueue;
