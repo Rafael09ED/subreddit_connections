@@ -93,7 +93,7 @@ class PQueue {
 
     _next() {
         this._pendingCount--;
-        if (!this.canStartAnother()) return;
+        if (!this._canStartAnother()) return;
         this._startAnother();
     }
 
@@ -121,7 +121,7 @@ class PQueue {
             this._intervalId = false;
         }
         this._doneInInterval = 0;
-        while (this.canStartAnother())
+        while (this._canStartAnother())
             this._startAnother();
     }
 
@@ -132,7 +132,7 @@ class PQueue {
                 this._pendingCount++;
                 this._doneInInterval++;
                 if (!this._intervalId) {
-                    this._intervalId = setInterval(this._onInterval(), this._intervalTime)
+                    this._intervalId = setInterval(() => this._onInterval(), this._intervalTime)
                 }
 
 
@@ -153,7 +153,7 @@ class PQueue {
                 }
             };
 
-            if (this.canStartAnother()) {
+            if (this._canStartAnother()) {
                 run();
             } else {
                 this.queue.enqueue(run, opts);
@@ -161,8 +161,8 @@ class PQueue {
         });
     }
 
-    canStartAnother() {
-        return !this._isPaused && this._pendingCount < this._concurrency && this._doneInInterval < this._maxInInterval;
+    _canStartAnother() {
+        return !this._isPaused && this.queue.size > 0 && this._pendingCount < this._concurrency && this._doneInInterval < this._maxInInterval;
     }
 
     addAll(fns, opts) {
@@ -175,7 +175,7 @@ class PQueue {
         }
 
         this._isPaused = false;
-        while (this.canStartAnother()) {
+        while (this._canStartAnother()) {
             this.queue.dequeue()();
         }
     }

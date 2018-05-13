@@ -1,25 +1,24 @@
-const snoowrap = require("snoowrap");
-const process = require('process');
-const neo4j = require("neo4j-driver").v1;
+const PQueue = require("../throttledPQueue");
 
-const driver = neo4j.driver("bolt://localhost", neo4j.auth.basic("neo4j", "1234"));
-const session = driver.session();
-
-// Create a new snoowrap requester with OAuth credentials.
-// For more information on getting credentials, see here: https://github.com/not-an-aardvark/reddit-oauth-helper
-const reddit = new snoowrap({
-    userAgent: 'script:scraper:v0.0.1',
-    clientId: process.env["clientId"],
-    clientSecret: process.env["clientSecret"],
-    username: process.env["username"],
-    password: process.env["password"],
+const tpq = new PQueue({
+    autoStart: false,
+    concurrency: Infinity,
+    maxInInterval: 10,
+    interval: 2000,
 });
 
-let limitPerRequest = 2;
-reddit
-    .getPopularSubreddits({
-        limit: limitPerRequest,
-        show: "all"
+for (let i = 0; i < 100; i++) {
+    console.log("added " + i + " func");
+    tpq.add(() => {
+        let j = i;
+        console.log(j);
     })
-    .then(console.log)
-    .catch(console.log);
+}
+tpq.start();
+tpq.onIdle().then(() => {
+    console.log("on idle")
+});
+tpq.onEmpty().then(() => {
+    console.log("on empty")
+});
+console.log("added all funcs");
