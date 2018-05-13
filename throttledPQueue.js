@@ -1,6 +1,5 @@
 'use strict';
-// Copied from https://github.com/sindresorhus/p-queue/blob/805339d42f15c7ea13a7288747f61db79d4d43fa/index.js
-// And https://github.com/sindresorhus/p-throttle/blob/5c1897b039a2334b635bb6d3f18758e4fcc660c5/index.js
+// Forked from https://github.com/sindresorhus/p-queue/blob/805339d42f15c7ea13a7288747f61db79d4d43fa/index.js
 
 // Port of lower_bound from http://en.cppreference.com/w/cpp/algorithm/lower_bound
 // Used to compute insertion index to keep queue sorted after insertion
