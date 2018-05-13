@@ -1,3 +1,8 @@
+/*
+  Cheat Sheet: https://neo4j.com/docs/cypher-refcard/current/
+*/
+
+
 CREATE CONSTRAINT ON (subreddit:Subreddit) ASSERT subreddit.name IS UNIQUE;
 CREATE CONSTRAINT ON (user:User) ASSERT user.name IS UNIQUE;
 
@@ -15,6 +20,7 @@ match (s)-[r]->(e)
 with s,e,type(r) as typ, tail(collect(r)) as coll
 foreach(x in coll | delete x);
 
-/*
-  Cheat Sheet: https://neo4j.com/docs/cypher-refcard/current/
-*/
+MATCH (a)-[:MODERATES]->(b)
+RETURN a, COLLECT(b) as users
+  ORDER BY SIZE(users) DESC
+  SKIP 1 LIMIT 10;

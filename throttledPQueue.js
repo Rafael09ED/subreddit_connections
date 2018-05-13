@@ -88,12 +88,12 @@ class PQueue {
         this._doneInInterval = 0;
         this._intervalTime = opts.interval;
         this._maxInInterval = opts.maxInInterval;
-        this._intervalId = false;
+        this._intervalId = null;
     }
 
     _next() {
         this._pendingCount--;
-        if (!this._canStartAnother()) return;
+        if (!this._canStartAnotherBecauseInterval()) return;
         this._startAnother();
     }
 
@@ -116,12 +116,13 @@ class PQueue {
     }
 
     _onInterval() {
+        console.log(this._doneInInterval + "  ==================================================  " + this._pendingCount);
         if (0 === this._doneInInterval && 0 === this._pendingCount) {
             clearInterval(this._intervalId);
-            this._intervalId = false;
+            this._intervalId = null;
         }
         this._doneInInterval = 0;
-        while (this._canStartAnother())
+        while (this._pendingCount < this._concurrency && this._canStartAnotherBecauseInterval())
             this._startAnother();
     }
 
@@ -131,7 +132,7 @@ class PQueue {
             const run = () => {
                 this._pendingCount++;
                 this._doneInInterval++;
-                if (!this._intervalId) {
+                if (this._intervalId === null) {
                     this._intervalId = setInterval(() => this._onInterval(), this._intervalTime)
                 }
 
@@ -153,16 +154,19 @@ class PQueue {
                 }
             };
 
-            if (this._canStartAnother()) {
+            if (!this._isPaused && this._pendingCount < this._concurrency && this._canStartAnotherBecauseInterval) {
                 run();
             } else {
                 this.queue.enqueue(run, opts);
+                if (this._intervalId === null) {
+                    this._intervalId = setInterval(() => this._onInterval(), this._intervalTime)
+                }
             }
         });
     }
 
-    _canStartAnother() {
-        return !this._isPaused && this.queue.size > 0 && this._pendingCount < this._concurrency && this._doneInInterval < this._maxInInterval;
+    _canStartAnotherBecauseInterval() {
+        return this._doneInInterval < this._maxInInterval;
     }
 
     addAll(fns, opts) {
@@ -175,7 +179,7 @@ class PQueue {
         }
 
         this._isPaused = false;
-        while (this._canStartAnother()) {
+        while (this.queue.size > 0 && this._pendingCount < this._concurrency && this._canStartAnotherBecauseInterval) {
             this.queue.dequeue()();
         }
     }
