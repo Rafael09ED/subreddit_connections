@@ -34,7 +34,6 @@ const reddit = new snoowrap({
 });
 
 
-
 // -- Functions --
 
 const catch_Neo4jError = (reason, name, cypher, params) => {
@@ -139,7 +138,7 @@ const processMostPopularSubreddits = (subredditsToGet, lastSubredditIdName, coun
                 let subredditIsNSFW = subredditQuery['over18'] === true;
                 let subredditSubscriberCount = parseInt(subredditQuery['subscribers']);
                 neo4jQueue.add(() => addSubredditToNeo4j(subredditName, subredditIsNSFW, subredditSubscriberCount));
-                redditQueue.add(() => processModeratorsFromSubreddit(subredditName));
+                redditQueue.push(() => processModeratorsFromSubreddit(subredditName));
             }
 
             // process remaining subreddits
@@ -148,7 +147,7 @@ const processMostPopularSubreddits = (subredditsToGet, lastSubredditIdName, coun
                 let nextLastSubredditIdName = nextLastSubreddit["name"];
                 let nextCount = count + value.length;
                 let remainingSubredditsToGet = subredditsToGet - value.length;
-                redditQueue.add(
+                redditQueue.push(
                     () => processMostPopularSubreddits(remainingSubredditsToGet, nextLastSubredditIdName, nextCount)
                 );
             }
@@ -160,10 +159,29 @@ const processMostPopularSubreddits = (subredditsToGet, lastSubredditIdName, coun
 // -- Code Start --
 
 const numberOfSubredditsToAdd = 1000;
-redditQueue.add(() => processMostPopularSubreddits(numberOfSubredditsToAdd));
 
-redditQueue.start();
-redditQueue.onIdle().then(() => {
+const redditThrottle = pThrottle((i) => i, 60, 60 * 1000);
+let promisesToRun = [];
+Object.defineProperty(redditQueue, "push", {
+    configurable: false,
+    enumerable: false, // hide from for...in
+    writable: false,
+    value: function () {
+        for (var i = 0, n = this.length, l = arguments.length; i < l; i++, n++) {
+            RaiseMyEvent(this, n, this[n] = arguments[i]); // assign/raise your event
+        }
+        return n;
+    }
+});
+
+redditQueue.push(processMostPopularSubreddits(numberOfSubredditsToAdd));
+
+for (let i = 0; i < redditQueue.length; i++) {
+    let func = redditQueue[i];
+    promisesToRun.push(redditThrottle(func));
+}
+
+Promise.all(promisesToRun).then(() => {
     console.log("All Reddit queries done");
     console.log(neo4jQueue.size + " neo4j queries to do");
     neo4jQueue.start();
