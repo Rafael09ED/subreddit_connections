@@ -1,7 +1,7 @@
 const ThrottledPQueue = require("../throttledPQueue");
 
 const tpq = new ThrottledPQueue({
-    runningConcurrency: true,       // max is for concurrent running vs concurrent started in interval
+    mustFinishDuringInterval: true,       // max is for concurrent running vs concurrent started in interval
     concurrentMax: 10,
     intervalTime: 2000,         // the interval time is ms
     autoStart: true
